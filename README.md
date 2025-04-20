@@ -2,7 +2,7 @@
   <img src="userpic.jpg" alt="Bot Logo" width="160"/>
 </p>
 
-# Telegram Group Message Archiver & Summarizer Bot
+# Telegram Group Message Summarizer Bot
 
 This project is a Telegram bot designed to archive group messages, export them daily to text files, generate daily discussion summaries using a language model, and automatically post these summaries to a designated thread in the same group.
 
