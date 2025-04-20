@@ -30,7 +30,7 @@ This project is a Telegram bot designed to archive group messages, export them d
 
 ---
 
-## How It Works
+### How It Works
 
 1. **Bot Setup:**  
    Add the bot to your Telegram group and ensure it has permission to read messages.
@@ -48,45 +48,47 @@ This project is a Telegram bot designed to archive group messages, export them d
    At the configured time (`TIME_POST`), the bot posts the contents of `summary.txt` to the specified summary thread in the group.
 
 ---
-## Directory Structure
-├── verter.py # Main bot script
-├── config.txt # Configuration file
-├── messages.db # SQLite database (auto-created)
-├── messages/ # Exported messages and summaries
-	│ └── DD.MM.YYYY/ │ ├── messages_part1.txt │ ├── messages_part2.txt │
-	└── summary.txt 
-├── userpic.jpg # Bot logo for README
-└── README.md # This file
+### Directory Structure
+```
+├── verter.py                 # Main bot script
+├── config.txt                # Configuration file
+├── messages.db               # SQLite database (auto-created)
+├── messages/                 # Exported messages and summaries
+│   └── DD.MM.YYYY/          
+│       ├── messages_part1.txt
+│       ├── messages_part2.txt
+│       └── summary.txt 
+├── userpic.jpg               # Bot logo for README
+└── README.md                 # This file
+```
 
-
----
-## Installation
+### Installation
 
 1. **Clone the Repository:**
    ```bash
-   git clone https://github.com/yourusername/yourrepo.git
-   cd yourrepo
-```
+	git clone https://github.com/yourusername/yourrepo.git
+	cd yourrepo
+	```
 2. **Install Dependencies:** Make sure you have Python 3.8+ installed.
-```bash
-pip install python-telegram-bot pytz
-```
-3. **Configure the Bot:**
-	Edit `config.txt` with your bot token, group/thread IDs, and other settings (see below for details).
-```txt
-TOKEN=your_telegram_bot_token
-TARGET_CHAT_ID=-1234567890
-SUMMARY_TOPIC_ID=12345
-TIME_EXPORT=23:59
-TIME_POST=09:00
-MAX_FILE_SIZE=50000
-MAX_SUMMARY_SIZE=4000
-IGNORED_TOPIC_IDS=111,222,333
-```
+	```bash
+	pip install python-telegram-bot pytz
+	```
+3. **Configure the Bot:** Edit `config.txt`
+    ```txt
+    TOKEN=your_telegram_bot_token
+    TARGET_CHAT_ID=-1234567890
+    SUMMARY_TOPIC_ID=12345
+    TIME_EXPORT=23:59
+    TIME_POST=09:00
+    MAX_FILE_SIZE=50000
+    MAX_SUMMARY_SIZE=4000
+    IGNORED_TOPIC_IDS=111,222,333
+    ```
 4. **Run the Bot:**
-```bash
-python verter.py
-```
+    ```bash
+    python verter.py
+    ```
+
 ### How to Generate Summaries
 
 After the bot exports messages, you need to process the exported `.txt` files with your preferred language model (e.g., GPT, Llama, etc.) to create a summary. Save the summary as `summary.txt` in the corresponding daily directory under `messages/`.
