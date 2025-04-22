@@ -156,6 +156,7 @@ async def post_summary(config, application):
     export_dir = Path(MESSAGES_DIR) / date_str
     summary_path = export_dir / 'summary.txt'
     if not summary_path.exists():
+        logger.warning(f"Looking for summary.txt at {summary_path}")
         logger.warning(f"No summary.txt found for {date_str}")
         return
     with open(summary_path, encoding='utf-8') as f:
