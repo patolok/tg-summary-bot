@@ -15,6 +15,8 @@ from telegram.ext import (
     filters,
 )
 
+from google import genai
+
 # --- Константы ---
 CONFIG_PATH = 'config.txt'
 DB_PATH = 'messages.db'
@@ -26,6 +28,13 @@ logging.basicConfig(
     level=logging.INFO,
     handlers=[logging.StreamHandler(sys.stdout)]
 )
+# Отключаем подробный лог сторонних библиотек
+logging.getLogger("httpx").setLevel(logging.WARNING)
+logging.getLogger("aiogram").setLevel(logging.WARNING)
+logging.getLogger("requests").setLevel(logging.WARNING)
+logging.getLogger("urllib3").setLevel(logging.WARNING)
+logging.getLogger("telegram").setLevel(logging.WARNING)
+logging.getLogger("apscheduler").setLevel(logging.WARNING)
 logger = logging.getLogger(__name__)
 
 # --- Чтение конфига ---
@@ -41,12 +50,17 @@ def read_config(path):
                 config[key.strip()] = val.strip()
     # Преобразуем нужные поля
     config['TARGET_CHAT_ID'] = int(config['TARGET_CHAT_ID'])
-    config['SUMMARY_TOPIC_ID'] = int(config['SUMMARY_TOPIC_ID'])
-    config['MAX_FILE_SIZE'] = int(config['MAX_FILE_SIZE'])
+    # SUMMARY_TOPIC_ID теперь опционален
+    if 'SUMMARY_TOPIC_ID' in config and config['SUMMARY_TOPIC_ID'].strip():
+        config['SUMMARY_TOPIC_ID'] = int(config['SUMMARY_TOPIC_ID'])
+    else:
+        config['SUMMARY_TOPIC_ID'] = None
     config['MAX_SUMMARY_SIZE'] = int(config['MAX_SUMMARY_SIZE'])
     config['IGNORED_TOPIC_IDS'] = [
         int(x) for x in config.get('IGNORED_TOPIC_IDS', '').split(',') if x.strip().isdigit()
     ]
+    # Новый ключ для Gemini
+    config['GEMINI_API_KEY'] = config.get('GEMINI_API_KEY', '')
     return config
 
 # --- Инициализация базы ---
@@ -100,7 +114,7 @@ def fetch_messages_for_period(db_path, chat_id, from_dt, to_dt, ignored_thread_i
     conn.close()
     return rows
 
-# --- Экспорт сообщений в файлы ---
+# --- Экспорт сообщений в файл, генерация summary через Gemini ---
 def export_messages(config):
     tz = pytz.timezone('Europe/Moscow')
     now = datetime.now(tz)
@@ -109,7 +123,7 @@ def export_messages(config):
         export_time -= timedelta(days=1)
     from_dt = export_time
     to_dt = export_time + timedelta(days=1)
-    date_str = to_dt.strftime('%d.%m.%Y')
+    date_str = to_dt.strftime('%d.%m.%y')  # dd.mm.yy
     export_dir = Path(MESSAGES_DIR) / date_str
     export_dir.mkdir(parents=True, exist_ok=True)
 
@@ -124,35 +138,60 @@ def export_messages(config):
 
     # Формируем строки
     lines = [f"{username}: {text}" for username, text, _, _ in messages]
-    max_size = config['MAX_FILE_SIZE']
-    file_idx = 1
-    curr_lines = []
-    curr_size = 0
-    files = []
-    for line in lines:
-        line_size = len(line) + 1  # +1 for newline
-        if curr_size + line_size > max_size and curr_lines:
-            fname = export_dir / f"messages_part{file_idx}.txt"
-            with open(fname, 'w', encoding='utf-8') as f:
-                f.write('\n'.join(curr_lines))
-            files.append(fname)
-            file_idx += 1
-            curr_lines = []
-            curr_size = 0
-        curr_lines.append(line)
-        curr_size += line_size
-    if curr_lines:
-        fname = export_dir / f"messages_part{file_idx}.txt"
-        with open(fname, 'w', encoding='utf-8') as f:
-            f.write('\n'.join(curr_lines))
-        files.append(fname)
-    logger.info(f"Exported to {len(files)} file(s) in {export_dir}")
+    fname = export_dir / "messages.txt"
+    with open(fname, 'w', encoding='utf-8') as f:
+        f.write('\n'.join(lines))
+    logger.info(f"Exported all messages to {fname}")
+
+    # Проверка на пустой день (только пустые строки/пробелы)
+    if not any(line.strip() for line in lines):
+        # Город спит...
+        tz = pytz.timezone('Europe/Moscow')
+        now = datetime.now(tz)
+        start_date = datetime(2025, 4, 23, tzinfo=tz)
+        day_number = (now.date() - start_date.date()).days
+        summary_path = export_dir / 'summary.txt'
+        msg = f"{day_number}-й день основного обучения.\nГород спит... 🌙"
+        with open(summary_path, 'w', encoding='utf-8') as f:
+            f.write(msg)
+        logger.info("No messages for the day. Posted 'Город спит...'")
+        return
+
+    # Генерируем summary через Gemini
+    try:
+        summary = generate_summary_via_gemini(config, fname)
+        summary_path = export_dir / 'summary.txt'
+        with open(summary_path, 'w', encoding='utf-8') as f:
+            f.write(summary)
+        logger.info(f"Summary saved to {summary_path}")
+    except Exception as e:
+        logger.error(f"Failed to generate summary via Gemini: {e}")
+
+# --- Gemini summary helper ---
+def generate_summary_via_gemini(config, messages_path):
+    # Прочитать promt.txt
+    promt_path = Path(__file__).parent / 'promt.txt'
+    with open(promt_path, encoding='utf-8') as f:
+        prompt = f.read().strip()
+    # Прочитать сообщения
+    with open(messages_path, encoding='utf-8') as f:
+        messages = f.read().strip()
+    # Объединить промт и сообщения
+    full_prompt = f"{prompt}\n\n{messages}"
+    # Отправить в Gemini
+    api_key = config['GEMINI_API_KEY']
+    client = genai.Client(api_key=api_key)
+    response = client.models.generate_content(
+        model="gemini-2.0-flash",
+        contents=full_prompt
+    )
+    return response.text
 
 # --- Публикация summary ---
 async def post_summary(config, application):
     tz = pytz.timezone('Europe/Moscow')
     now = datetime.now(tz)
-    date_str = now.strftime('%d.%m.%Y')
+    date_str = now.strftime('%d.%m.%y')  # dd.mm.yy
     export_dir = Path(MESSAGES_DIR) / date_str
     summary_path = export_dir / 'summary.txt'
     if not summary_path.exists():
@@ -164,13 +203,19 @@ async def post_summary(config, application):
     if len(summary) > config['MAX_SUMMARY_SIZE']:
         logger.warning(f"Summary exceeds MAX_SUMMARY_SIZE ({len(summary)} > {config['MAX_SUMMARY_SIZE']})")
         return
-    msg = f"Сегодня {now.strftime('%d.%m')} в теме обсуждалось:\n{summary}"
+    start_date = datetime(2025, 4, 23, tzinfo=tz)
+    day_number = (now.date() - start_date.date()).days
+    # Если в summary уже содержится 'Город спит...', просто отправляем его
+    if 'Город спит...' in summary:
+        msg = summary
+    else:
+        msg = f"✨ {day_number}-й день основного обучения. ✨\nОсновные темы обсуждения за день:\n{summary}"
+    # message_thread_id теперь опционален
+    send_args = dict(chat_id=config['TARGET_CHAT_ID'], text=msg)
+    if config.get('SUMMARY_TOPIC_ID') is not None:
+        send_args['message_thread_id'] = config['SUMMARY_TOPIC_ID']
     try:
-        await application.bot.send_message(
-            chat_id=config['TARGET_CHAT_ID'],
-            message_thread_id=config['SUMMARY_TOPIC_ID'],
-            text=msg
-        )
+        await application.bot.send_message(**send_args)
         logger.info("Summary posted successfully.")
     except Exception as e:
         logger.error(f"Failed to post summary: {e}")
@@ -215,8 +260,7 @@ async def on_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if chat.id != config['TARGET_CHAT_ID']:
         return
     # Игнорировать репосты из каналов
-    if getattr(msg, 'forward_from_chat', None) is not None and getattr(msg.forward_from_chat, 'type', None) == 'channel':
-        return
+    if getattr(msg, 'forward_from_chat', None) is not None and getattr(msg.forward_from_chat, 'type', None) == 'channel':        return
     # Игнорировать личные сообщения и другие группы
     if chat.type not in ['group', 'supergroup']:
         return
