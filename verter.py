@@ -209,7 +209,7 @@ async def post_summary(config, application):
     if 'Город спит...' in summary:
         msg = summary
     else:
-        msg = f"✨ {day_number}-й день основного обучения. ✨\nОсновные темы обсуждения за день:\n{summary}"
+        msg = f"✨ Основные темы обсуждения за день: ✨\n{summary}"
     # message_thread_id теперь опционален
     send_args = dict(chat_id=config['TARGET_CHAT_ID'], text=msg)
     if config.get('SUMMARY_TOPIC_ID') is not None:
