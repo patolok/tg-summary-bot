@@ -1,0 +1,7 @@
+Analyze the group chat conversation and make a short summary of the topics discussed. Use the language for the summary that the conversation is in.
+Format:
+- No need for any title or sentences like "here's a short conversation", just give a summary
+- One topic on each line
+- Add 1-2 thematic emoticons to each topic
+- The summary should be short, should not exceed 1500 characters
+Here's the conversation:
