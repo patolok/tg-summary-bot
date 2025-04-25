@@ -4,6 +4,7 @@ import sqlite3
 import logging
 import asyncio
 import pytz
+import re
 from datetime import datetime, timedelta, time as dt_time
 from pathlib import Path
 
@@ -96,7 +97,7 @@ def fetch_messages_for_period(db_path, chat_id, from_dt, to_dt, ignored_thread_i
     conn = sqlite3.connect(db_path)
     c = conn.cursor()
     query = '''
-        SELECT username, message_text, timestamp, thread_id
+        SELECT message_id, username, message_text, timestamp, thread_id
         FROM messages
         WHERE chat_id = ?
           AND timestamp >= ?
@@ -137,7 +138,7 @@ def export_messages(config):
     logger.info(f"Exporting {len(messages)} messages for {date_str}")
 
     # Формируем строки
-    lines = [f"{username}: {text}" for username, text, _, _ in messages]
+    lines = [f"{message_id} | {username}: {text}" for message_id, username, text, _, _ in messages]
     fname = export_dir / "messages.txt"
     with open(fname, 'w', encoding='utf-8') as f:
         f.write('\n'.join(lines))
@@ -151,7 +152,7 @@ def export_messages(config):
         start_date = datetime(2025, 4, 23, tzinfo=tz)
         day_number = (now.date() - start_date.date()).days
         summary_path = export_dir / 'summary.txt'
-        msg = f"{day_number}-й день основного обучения.\nГород спит... 🌙"
+        msg = f"🌙 Город спит... 🌙"
         with open(summary_path, 'w', encoding='utf-8') as f:
             f.write(msg)
         logger.info("No messages for the day. Posted 'Город спит...'")
@@ -187,6 +188,28 @@ def generate_summary_via_gemini(config, messages_path):
     )
     return response.text
 
+# --- Экранирование спецсимволов MarkdownV2 ---
+def escape_markdown_v2(text):
+    # Найти все телеграм-ссылки
+    link_pattern = re.compile(r'\[🔗\]\(https://t\.me/c/\d+/[^)]+\)')
+    result = []
+    last_idx = 0
+    for match in link_pattern.finditer(text):
+        # Экранируем текст до ссылки
+        before = text[last_idx:match.start()]
+        special_chars = r'_*[]()~`>#+\-=|{}.!'
+        before = re.sub(f'([{re.escape(special_chars)}])', r'\\\1', before)
+        result.append(before)
+        # Добавляем ссылку как есть
+        result.append(match.group(0))
+        last_idx = match.end()
+    # Экранируем остаток текста после последней ссылки
+    special_chars = r'_*[]()~`>#+\-=|{}.!'
+    after = text[last_idx:]
+    after = re.sub(f'([{re.escape(special_chars)}])', r'\\\1', after)
+    result.append(after)
+    return ''.join(result)
+
 # --- Публикация summary ---
 async def post_summary(config, application):
     tz = pytz.timezone('Europe/Moscow')
@@ -209,9 +232,14 @@ async def post_summary(config, application):
     if 'Город спит...' in summary:
         msg = summary
     else:
-        msg = f"✨ Основные темы обсуждения за день: ✨\n{summary}"
+        msg = f"📌 #Темы_дня: 📌\n{summary}"
     # message_thread_id теперь опционален
-    send_args = dict(chat_id=config['TARGET_CHAT_ID'], text=msg)
+    msg = escape_markdown_v2(msg)
+    send_args = dict(
+        chat_id=config['TARGET_CHAT_ID'],
+        text=msg,
+        parse_mode="MarkdownV2"
+    )
     if config.get('SUMMARY_TOPIC_ID') is not None:
         send_args['message_thread_id'] = config['SUMMARY_TOPIC_ID']
     try:
@@ -275,6 +303,8 @@ async def on_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     username = msg.from_user.username or msg.from_user.first_name or "Unknown"
     message_text = msg.text or msg.caption or ''
     if not message_text.strip():
+        return
+    if len(message_text) > 750:
         return
     timestamp = datetime.fromtimestamp(msg.date.timestamp(), pytz.UTC).astimezone(pytz.timezone('Europe/Moscow')).isoformat()
     save_message(
