@@ -192,22 +192,38 @@ def generate_summary_via_gemini(config, messages_path):
 def escape_markdown_v2(text):
     # Найти все телеграм-ссылки
     link_pattern = re.compile(r'\[🔗\]\(https://t\.me/c/\d+/[^)]+\)')
+    # Найти заголовки в формате **Текст**
+    header_pattern = re.compile(r'\*\*([^\*]+)\*\*')
+
     result = []
     last_idx = 0
-    for match in link_pattern.finditer(text):
-        # Экранируем текст до ссылки
+
+    # Обрабатываем текст, учитывая ссылки и заголовки
+    for match in re.finditer(r'(\[🔗\]\(https://t\.me/c/\d+/[^)]+\))|(\*\*[^\*]+\*\*)', text):
+        # Экранируем текст до текущего совпадения (ссылки или заголовка)
         before = text[last_idx:match.start()]
-        special_chars = r'_*[]()~`>#+\-=|{}.!'
+        special_chars = r'_*[]()~>#+\-=|{}.!'
         before = re.sub(f'([{re.escape(special_chars)}])', r'\\\1', before)
         result.append(before)
-        # Добавляем ссылку как есть
-        result.append(match.group(0))
+
+        # Если это ссылка, добавляем как есть
+        if match.group(1):
+            result.append(match.group(1))
+        # Если это заголовок, преобразуем в *Текст* для жирного шрифта
+        elif match.group(2):
+            header_text = match.group(2)[2:-2]  # Удаляем ** с начала и конца
+            # Экранируем специальные символы внутри заголовка
+            header_text = re.sub(f'([{re.escape(special_chars)}])', r'\\\1', header_text)
+            result.append(f'*{header_text}*')
+
         last_idx = match.end()
-    # Экранируем остаток текста после последней ссылки
-    special_chars = r'_*[]()~`>#+\-=|{}.!'
+
+    # Экранируем остаток текста после последнего совпадения
+    special_chars = r'_*[]()~>#+\-=|{}.!'
     after = text[last_idx:]
     after = re.sub(f'([{re.escape(special_chars)}])', r'\\\1', after)
     result.append(after)
+
     return ''.join(result)
 
 # --- Публикация summary ---
