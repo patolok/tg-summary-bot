@@ -152,7 +152,7 @@ def export_messages(config):
         start_date = datetime(2025, 4, 23, tzinfo=tz)
         day_number = (now.date() - start_date.date()).days
         summary_path = export_dir / 'summary.txt'
-        msg = f"🌙 Город спит... 🌙"
+        msg = f"🌙 {day_number}-й день основы\nГород спит... 🌙"
         with open(summary_path, 'w', encoding='utf-8') as f:
             f.write(msg)
         logger.info("No messages for the day. Posted 'Город спит...'")
@@ -163,7 +163,7 @@ def export_messages(config):
         summary = generate_summary_via_gemini(config, fname)
         summary_path = export_dir / 'summary.txt'
         with open(summary_path, 'w', encoding='utf-8') as f:
-            f.write(summary)
+            f.write(summary.rstrip())
         logger.info(f"Summary saved to {summary_path}")
     except Exception as e:
         logger.error(f"Failed to generate summary via Gemini: {e}")
@@ -178,7 +178,7 @@ def generate_summary_via_gemini(config, messages_path):
     with open(messages_path, encoding='utf-8') as f:
         messages = f.read().strip()
     # Объединить промт и сообщения
-    full_prompt = f"{prompt}\n\n{messages}"
+    full_prompt = f"{prompt}\n{messages}"
     # Отправить в Gemini
     api_key = config['GEMINI_API_KEY']
     client = genai.Client(api_key=api_key)
@@ -188,7 +188,6 @@ def generate_summary_via_gemini(config, messages_path):
     )
     return response.text
 
-# --- Экранирование спецсимволов MarkdownV2 ---
 def escape_markdown_v2(text):
     # Найти все телеграм-ссылки
     link_pattern = re.compile(r'\[🔗\]\(https://t\.me/c/\d+/[^)]+\)')
@@ -209,7 +208,7 @@ def escape_markdown_v2(text):
         # Если это ссылка, добавляем как есть
         if match.group(1):
             result.append(match.group(1))
-        # Если это заголовок, преобразуем в *Текст* для жирного шрифта
+        # Если это заголовок, преобразуем в *Текст* для жирного начертания
         elif match.group(2):
             header_text = match.group(2)[2:-2]  # Удаляем ** с начала и конца
             # Экранируем специальные символы внутри заголовка
@@ -238,7 +237,7 @@ async def post_summary(config, application):
         logger.warning(f"No summary.txt found for {date_str}")
         return
     with open(summary_path, encoding='utf-8') as f:
-        summary = f.read()
+        summary = f.read().strip()
     if len(summary) > config['MAX_SUMMARY_SIZE']:
         logger.warning(f"Summary exceeds MAX_SUMMARY_SIZE ({len(summary)} > {config['MAX_SUMMARY_SIZE']})")
         return
@@ -248,8 +247,20 @@ async def post_summary(config, application):
     if 'Город спит...' in summary:
         msg = summary
     else:
-        msg = f"📌 #Темы_дня: 📌\n{summary}"
-    # message_thread_id теперь опционален
+        msg = f"✨{day_number}-й день основы #Темы_дня\n{summary}"
+    # --- ДОБАВЛЕНИЕ содержимого logins.txt ---
+    logins_path = Path('logins.txt')
+    if logins_path.exists():
+        try:
+            with open(logins_path, encoding='utf-8') as f:
+                logins_content = f.read().strip()
+            if logins_content:
+                msg += f"\n\n{logins_content}"
+        except Exception as e:
+            logger.error(f"Failed to read logins.txt: {e}")
+    else:
+        logger.warning(f"logins.txt not found at {logins_path.resolve()}")
+    # --- Экранирование спецсимволов для MarkdownV2 ---
     msg = escape_markdown_v2(msg)
     send_args = dict(
         chat_id=config['TARGET_CHAT_ID'],
@@ -320,7 +331,7 @@ async def on_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     message_text = msg.text or msg.caption or ''
     if not message_text.strip():
         return
-    if len(message_text) > 750:
+    if len(message_text) > 850:
         return
     timestamp = datetime.fromtimestamp(msg.date.timestamp(), pytz.UTC).astimezone(pytz.timezone('Europe/Moscow')).isoformat()
     save_message(
