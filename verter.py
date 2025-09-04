@@ -152,7 +152,7 @@ def export_messages(config):
         start_date = datetime(2025, 4, 23, tzinfo=tz)
         day_number = (now.date() - start_date.date()).days
         summary_path = export_dir / 'summary.txt'
-        msg = f"🌙 {day_number}-й день основы\nГород спит... 🌙"
+        msg = f"✨{day_number}-й день основы\n🌙 Город спит..."
         with open(summary_path, 'w', encoding='utf-8') as f:
             f.write(msg)
         logger.info("No messages for the day. Posted 'Город спит...'")
