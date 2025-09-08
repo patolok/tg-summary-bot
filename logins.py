@@ -8,10 +8,10 @@ import schedule
 import json
 from collections import Counter
 
-API_BASE = "https://edu-api.21-school.ru/services/21-school/api/v1"
-AUTH_URL = "https://auth.sberclass.ru/auth/realms/EduPowerKeycloak/protocol/openid-connect/token"
-CAMPUS_ID = "5a23bec9-f989-485d-935b-3f0dc61c4812"
-CLUSTER_IDS = ["36859", "36860", "36861", "36862"]
+API_BASE = ""
+AUTH_URL = ""
+CAMPUS_ID = ""
+CLUSTER_IDS = ["", "", "", ""]
 DB_NAME = "campus_attendance.db"
 REPORT_FILE = "logins.txt"
 
